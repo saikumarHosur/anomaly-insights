@@ -1,0 +1,120 @@
+--Anomaly Insights Engine
+
+What this service does
+
+  I built a small service in TypeScript, Node, Express that connects to PostgreSQL 18.
+
+  It looks at the last 30 hours of data.
+
+It checks three things:
+
+  page views
+
+  user actions
+
+  page load time.
+
+It tries to find unusual changes.
+
+It returns these as insights in JSON, and I also show them on a small UI page redirec to /Insights.
+
+Endpoints:
+
+  /api/insights/anomalies : returns JSON data
+
+  /insights : returns a simple web page
+
+2. Database tables:
+
+Database name: Insights
+
+pageviews_hourly (
+  ts           timestamptz,
+  referrer     text,
+  device_type  text,
+  category     text,
+  page         text,
+  count        bigint
+);
+
+useractions_hourly (
+  ts           timestamptz,
+  referrer     text,
+  device_type  text,
+  category     text,
+  page         text,
+  count        bigint
+);
+
+performance_hourly (
+  ts                 timestamptz,
+  referrer           text,
+  device_type        text,
+  category           text,
+  page               text,
+  p95_load_time_ms   numeric
+);
+
+3. DB connection to Postgres
+
+I keep the settings in a .env file, for example:
+
+DATABASE_URL=postgres://testing:testing@localhost:5432/Insights
+PORT=8080
+CACHE_TTL_SECONDS=900
+SAVE_INSIGHTS=false
+
+
+4. How I detect anomalies
+
+  I do the same process for three metrics:
+
+  pageviews : from pageviews_hourly.count
+
+  useractions : from useractions_hourly.count
+
+  performance : from performance_hourly.p95_load_time_ms
+
+
+
+Step 1: Read last 30 hours
+
+For each metric I read rows where: ts >= now() - interval 30 hours
+
+Step 2: Group by context
+
+I group the data by:page,device type,referrer,category
+
+Example group:
+
+page /pricing, device desktop, referrer google, category marketing
+
+
+Step 3: Split into baseline and recent
+
+  For each group:
+
+    I sort the rows by time.
+
+    I take the last 6 time buckets as the recent window.
+
+  All earlier buckets are used as the baseline.
+
+  If there are not enough older points (very few baseline rows), I skip that group.
+
+Step 4: Calculate averages and variation
+
+  For the baseline:
+
+  I calculate the average value.
+
+  I calculate how much it varies SD.
+
+  If the variation is zero, I skip it.
+
+  For the recent:
+
+  I calculate the average of the last 6 values.
+
+  Then I use these to calculate a z-score and decide if it is an anomaly.
+
